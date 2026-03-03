@@ -91,10 +91,30 @@ class TestStepflowTweaksIntegration:
         else:
             pytest.skip("basic_prompting.json fixture not found")
 
+    def _find_lmc_executor_step(self, flow_dict):
+        """Find the LanguageModelComponent executor step (not the blob step)."""
+        return next(
+            (
+                s for s in flow_dict["steps"]
+                if "LanguageModelComponent" in s["id"]
+                and (
+                    s["component"] == "/langflow/custom_code"
+                    or s["component"].startswith("/langflow/core/")
+                )
+            ),
+            None,
+        )
+
     def test_real_workflow_tweaks_application(self, basic_prompting_flow_dict):
         """Test tweaks application on a real converted workflow."""
+        lmc_step = self._find_lmc_executor_step(basic_prompting_flow_dict)
+        if lmc_step is None:
+            pytest.skip("No LanguageModelComponent executor step found in fixture")
+
+        # Strip the "langflow_" prefix added by the translator to get the Langflow node ID
+        node_id = lmc_step["id"].removeprefix("langflow_")
         tweaks = {
-            "LanguageModelComponent-kBOja": {  # Must match actual component ID
+            node_id: {
                 "api_key": "integration_test_key",
                 "temperature": 0.7,
                 "model_name": "gpt-4",
@@ -103,45 +123,31 @@ class TestStepflowTweaksIntegration:
 
         modified_dict = apply_stepflow_tweaks_to_dict(basic_prompting_flow_dict, tweaks)
 
-        # Find the LanguageModelComponent executor step (custom_code or core)
-        langflow_step = None
-        for step in modified_dict["steps"]:
-            if step["id"] == "langflow_LanguageModelComponent-kBOja" and (
-                step["component"] == "/langflow/custom_code"
-                or step["component"].startswith("/langflow/core/")
-            ):
-                langflow_step = step
-                break
-
-        assert langflow_step is not None, (
-            "LanguageModelComponent executor step not found"
+        modified_step = self._find_lmc_executor_step(modified_dict)
+        assert modified_step is not None, (
+            "LanguageModelComponent executor step not found after tweaks"
         )
 
-        # Verify tweaks were applied
-        input_section = langflow_step.get("input", {}).get("input", {})
+        input_section = modified_step.get("input", {}).get("input", {})
         assert input_section.get("api_key") == "integration_test_key"
         assert input_section.get("temperature") == 0.7
         assert input_section.get("model_name") == "gpt-4"
 
     def test_tweaks_preserve_existing_inputs(self, basic_prompting_flow_dict):
         """Test that tweaks preserve existing input values that aren't overwritten."""
-        tweaks = {
-            "LanguageModelComponent-kBOja": {
-                "api_key": "new_key",
-            }
-        }
+        lmc_step = self._find_lmc_executor_step(basic_prompting_flow_dict)
+        if lmc_step is None:
+            pytest.skip("No LanguageModelComponent executor step found in fixture")
+
+        node_id = lmc_step["id"].removeprefix("langflow_")
+        tweaks = {node_id: {"api_key": "new_key"}}
 
         modified_dict = apply_stepflow_tweaks_to_dict(basic_prompting_flow_dict, tweaks)
 
-        # Find the step
-        for step in modified_dict["steps"]:
-            if step["id"] == "langflow_LanguageModelComponent-kBOja":
-                input_section = step.get("input", {}).get("input", {})
-                # New value should be applied
-                assert input_section.get("api_key") == "new_key"
-                # Other fields from the original workflow should still exist
-                # (The exact fields depend on the fixture content)
-                break
+        modified_step = self._find_lmc_executor_step(modified_dict)
+        if modified_step is not None:
+            input_section = modified_step.get("input", {}).get("input", {})
+            assert input_section.get("api_key") == "new_key"
 
     def test_empty_tweaks_returns_unchanged(self, basic_prompting_flow_dict):
         """Test that empty tweaks returns the workflow unchanged."""

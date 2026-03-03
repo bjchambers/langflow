@@ -163,6 +163,19 @@ async def simple_run_flow(
             raise ValueError(msg)
         graph_data = flow.data.copy()
         graph_data = process_tweaks(graph_data, input_request.tweaks or {}, stream=stream)
+
+        settings = get_settings_service().settings
+        if settings.executor == "stepflow":
+            from langflow_stepflow.executor import get_runner  # noqa: PLC0415
+
+            runner = await get_runner(settings.stepflow_url)
+            task_result, session_id = await runner.run(
+                flow_data=graph_data,
+                input_value=input_request.input_value,
+                session_id=input_request.session_id,
+            )
+            return RunResponse(outputs=task_result, session_id=session_id)
+
         graph = Graph.from_payload(
             graph_data, flow_id=flow_id_str, user_id=str(user_id), flow_name=flow.name, context=context
         )

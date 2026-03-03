@@ -355,6 +355,16 @@ class Settings(BaseSettings):
     Note: This setting only takes effect when ssrf_protection_enabled is True.
     When protection is disabled, all hosts are allowed regardless of this setting."""
 
+    # Stepflow executor
+    executor: Literal["langflow", "stepflow"] = "langflow"
+    """Execution engine to use for running flows.
+    Set to 'stepflow' to route execution through a Stepflow orchestrator instead
+    of the built-in Langflow graph engine. Requires the 'langflow-stepflow' package."""
+    stepflow_url: str | None = None
+    """URL of the Stepflow orchestrator. Only used when executor='stepflow'.
+    If not set, an embedded orchestrator is started automatically.
+    Example: 'http://localhost:7827'"""
+
     @field_validator("runtime_port", mode="before")
     @classmethod
     def validate_runtime_port(cls, value):
